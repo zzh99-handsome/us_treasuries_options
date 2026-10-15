@@ -29,7 +29,13 @@ strike_half_width: 3.0
 
 # 网格搜索参数空间
 intervals: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
-ratios: [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5]
+# ratio = sell_qty / buy_qty；每腿数量必须为整数。
+ratio_range:
+  min: 0.1
+  max: 2.0
+  step: 0.1
+# A 10-contract buy leg makes every 0.1 sell/buy ratio an integer lot count.
+ratio_quantity_scale: 10
 
 # 训练窗口设置
 window_type: "rolling"      # "rolling" 或 "expanding"
@@ -45,6 +51,8 @@ initial_capital: 1000000
 # 不同期限美债期货乘数不同，例如：TU/FV/TY = 1000，US = 1000。
 # 请根据所选 product_code 在 CME 官网确认。
 point_value: 1000
+# 临时使用 PX_LAST 作为到期价格代理；真实回测前核实并改为权威最终结算字段。
+settlement_field: "PX_LAST"
 
 # 每单买入腿合约数
 contracts_per_leg: 1
@@ -54,6 +62,52 @@ cache_dir: "./cache"
 
 # 报告输出目录（相对 backtest/）
 report_dir: "./reports"
+
+backtest:
+  entry_schedule: "first_trading_day_of_month"
+  hold_to_expiry: true
+  roll_existing_positions: false
+
+data:
+  # 回测首月之前额外下载的历史月份，用于形成首个训练窗口。
+  warmup_months: 12
+
+execution:
+  buy_option_price: "ask"
+  sell_option_price: "bid"
+  invalid_quote_policy: "skip_trade"
+  max_quote_age_days: 0
+  # Option quotes are stored in 1/64 price units; reject either leg if its
+  # displayed bid/ask width exceeds 12 ticks (12/64 points).
+  max_bid_ask_spread_64: 12
+
+strategy:
+  require_same_expiry: true
+  strike_selection: "nearest_grid_pair_with_valid_quotes"
+
+optimization:
+  method: "grid_search"
+  objective: "cumulative_pnl"
+  minimum_samples: 6
+  regime_aware_ratio: false
+  tie_break: "interval_then_ratio_ascending"
+  near_tie_relative_gap: 0.02
+
+constraints:
+  enabled: false
+
+report:
+  include_training_diagnostics: true
+  include_trade_ledger: true
+  include_skipped_trades: true
+
+# 尚未完成交易所资料核验；真实回测报告会明确披露该状态。
+market_specifications:
+  verification_status: "unverified"
+  source: null
+  verified_at: null
+  applies_to: "product_code"
+  notes: "核验报价单位、乘数、tick、期权系列映射、到期与最终结算规则后再解读真实绩效。"
 
 # 是否启用择时因子框架（当前为占位实现）
 enable_timing_factor: false

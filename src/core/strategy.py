@@ -22,6 +22,14 @@ class Trade:
     spread: PutRatioSpread
     params_interval: float
     params_ratio: float
+    trade_id: str = ""
+    future_ticker: str = ""
+    status: str = "open"
+    realized_pnl: Optional[float] = None
+    settlement_price: Optional[float] = None
+    settlement_cashflow: Optional[float] = None
+    regime: str = "neutral"
+    window_id: str = ""
 
 
 class MonthlyPutRatioSpreadStrategy:
@@ -39,6 +47,7 @@ class MonthlyPutRatioSpreadStrategy:
         contracts_k2: int,
         product_prefix: str,
         point_value: float = 1000.0,
+        max_bid_ask_spread_64: Optional[float] = None,
     ) -> None:
         """
         Args:
@@ -53,6 +62,7 @@ class MonthlyPutRatioSpreadStrategy:
         self.contracts_k2 = contracts_k2
         self.product_prefix = product_prefix
         self.point_value = point_value
+        self.max_bid_ask_spread_64 = max_bid_ask_spread_64
 
     def build_trade(
         self,
@@ -89,6 +99,7 @@ class MonthlyPutRatioSpreadStrategy:
             expiry_date=expiry_date,
             product_prefix=self.product_prefix,
             point_value=self.point_value,
+            max_bid_ask_spread_64=self.max_bid_ask_spread_64,
         )
         if spread is None:
             return None

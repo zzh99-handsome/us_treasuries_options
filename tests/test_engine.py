@@ -129,6 +129,90 @@ def test_engine_no_lookahead(engine: BacktestEngine) -> None:
         assert params_full[d] == p, f"{d} 的参数不应因未来数据而改变"
 
 
+def test_engine_future_data_perturbation_does_not_change_past_decisions(
+    engine: BacktestEngine,
+) -> None:
+    """扰动截止日之后的数据不能改变此前的选参或入场组合。"""
+    cutoff = dt.date(2020, 8, 31)
+    baseline = engine.run(dt.date(2020, 4, 1), dt.date(2020, 12, 31))
+    baseline_params = [
+        (date, params) for date, params in baseline.monthly_params if date <= cutoff
+    ]
+    baseline_trades = [
+        (trade.entry_date, trade.spread.k1, trade.spread.k2, trade.spread.ratio)
+        for trade in baseline.trades if trade.entry_date <= cutoff
+    ]
+
+    for frame in engine.futures_data.values():
+        future_rows = frame.index > pd.Timestamp(cutoff)
+        frame.loc[future_rows, "PX_LAST"] += 50.0
+    for frame in engine.options_data.values():
+        future_rows = frame.index > pd.Timestamp(cutoff)
+        frame.loc[future_rows, ["PX_BID", "PX_ASK", "PX_LAST"]] *= 10.0
+
+    perturbed = engine.run(dt.date(2020, 4, 1), dt.date(2020, 12, 31))
+    perturbed_params = [
+        (date, params) for date, params in perturbed.monthly_params if date <= cutoff
+    ]
+    perturbed_trades = [
+        (trade.entry_date, trade.spread.k1, trade.spread.k2, trade.spread.ratio)
+        for trade in perturbed.trades if trade.entry_date <= cutoff
+    ]
+
+    assert perturbed_params == baseline_params
+    assert perturbed_trades == baseline_trades
+
+
+def test_engine_training_windows_end_before_decision(engine: BacktestEngine) -> None:
+    """训练窗口严格早于决策日，且诊断保留候选排名。"""
+    result = engine.run(dt.date(2020, 4, 1), dt.date(2020, 9, 30))
+    assert result.window_diagnostics
+    for diagnostic in result.window_diagnostics:
+        assert diagnostic["training_end"] < diagnostic["decision_date"]
+        assert diagnostic["oos_trade_id"]
+        assert "candidate_scores" in diagnostic
+
+
+def test_engine_skips_crossed_or_missing_quotes_with_reason(engine: BacktestEngine) -> None:
+    """无有效报价时不使用 Mid/Last 补值，并记录跳过原因。"""
+    entry_date = pd.Timestamp("2020-04-01")
+    for frame in engine.options_data.values():
+        if entry_date in frame.index:
+            frame.loc[entry_date, "PX_BID"] = 0.0
+            frame.loc[entry_date, "PX_ASK"] = 0.0
+    result = engine.run(dt.date(2020, 4, 1), dt.date(2020, 4, 30))
+    skipped = [row for row in result.skipped_trades if row["entry_date"] == "2020-04-01"]
+    assert skipped
+    assert "no_liquid_same_expiry_bid_ask_pair" in skipped[0]["reason"]
+
+
+def test_engine_tries_later_expiry_when_nearest_has_no_liquid_quotes(
+    engine: BacktestEngine,
+) -> None:
+    entry_date = dt.date(2020, 4, 1)
+    future_ticker = engine._active_future_ticker(entry_date)
+    candidates = engine._series_candidates(future_ticker, entry_date)
+    assert len(candidates) >= 2
+    nearest = candidates[0]
+    nearest_chain = engine._option_chain_for_series(nearest, entry_date)
+    for quote in nearest_chain.values():
+        ticker = quote["ticker"]
+        frame = engine.options_data.get(ticker)
+        if frame is not None and pd.Timestamp(entry_date) in frame.index:
+            frame.loc[pd.Timestamp(entry_date), ["PX_BID", "PX_ASK"]] = 0.0
+
+    result = engine.run(entry_date, dt.date(2020, 4, 30))
+    april_trade = next(trade for trade in result.trades if trade.entry_date == entry_date)
+    assert april_trade.exit_date > nearest.expiry_date
+
+
+def test_engine_reports_liquidity_screened_training_exclusion(engine: BacktestEngine) -> None:
+    result = engine.run(dt.date(2020, 4, 1), dt.date(2020, 9, 30))
+    assert result.window_diagnostics
+    reasons = result.window_diagnostics[0]["exclusion_reasons"]
+    assert "no_liquid_same_expiry_bid_ask_pair" in reasons
+
+
 def test_engine_trades_held_to_expiry(engine: BacktestEngine) -> None:
     """每笔 trade 的 exit_date 应为其对应期权到期日。"""
     result = engine.run(dt.date(2020, 4, 1), dt.date(2020, 12, 31))

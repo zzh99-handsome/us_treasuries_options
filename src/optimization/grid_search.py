@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from src.core.instrument import PutRatioSpread
@@ -40,6 +41,8 @@ class Episode:
     future_price_entry: float
     future_price_expiry: float
     option_chain: Dict[float, Dict[str, Optional[float]]]
+    future_ticker: str = ""
+    regime: str = "neutral"
 
 
 @dataclass
@@ -50,6 +53,15 @@ class GridSearchResult:
     best_score: float
     scores: Dict[ParameterSet, float]
     episodes_count: int
+    valid_counts: Dict[ParameterSet, int] = field(default_factory=dict)
+
+    @property
+    def ranked_scores(self) -> List[Tuple[ParameterSet, float]]:
+        """所有候选按分数降序排列；同分时按 interval、ratio 升序确定性排序。"""
+        return sorted(
+            self.scores.items(),
+            key=lambda item: (-item[1], item[0].interval, item[0].ratio),
+        )
 
 
 ObjectiveFunc = Callable[[List[float]], float]
@@ -83,6 +95,7 @@ class GridSearch:
         product_prefix: str,
         point_value: float = 1000.0,
         objective: ObjectiveFunc = default_objective,
+        max_bid_ask_spread_64: Optional[float] = None,
     ) -> None:
         """
         Args:
@@ -96,13 +109,19 @@ class GridSearch:
             objective: 优化目标函数，默认累计 payoff。
         """
         self.intervals = list(intervals)
-        self.ratios = list(ratios)
+        self.ratios = [float(ratio) for ratio in ratios]
+        if not self.ratios or any(
+            not math.isfinite(ratio) or ratio <= 0 or ratio > 2
+            for ratio in self.ratios
+        ):
+            raise ValueError("ratios must contain finite values in the range (0, 2]")
         self.strike_step = strike_step
         self.strike_half_width = strike_half_width
         self.contracts_k2 = contracts_k2
         self.product_prefix = product_prefix
         self.point_value = point_value
         self.objective = objective
+        self.max_bid_ask_spread_64 = max_bid_ask_spread_64
 
     def _simulate_episode(
         self,
@@ -127,6 +146,7 @@ class GridSearch:
             expiry_date=episode.expiry_date,
             product_prefix=self.product_prefix,
             point_value=self.point_value,
+            max_bid_ask_spread_64=self.max_bid_ask_spread_64,
         )
         if spread is None:
             return None
@@ -153,21 +173,28 @@ class GridSearch:
                     self._simulate_episode(params, ep) for ep in episodes
                 ]
 
-        # 对每组参数，剔除无法构建 spread 的月份后计算目标函数值
+        # 对每组参数剔除不可执行样本，并记录有效样本数。
         avg_scores: Dict[ParameterSet, float] = {}
+        valid_counts: Dict[ParameterSet, int] = {}
         for params, pnls in scores.items():
             valid_pnls = [p for p in pnls if p is not None]
+            valid_counts[params] = len(valid_pnls)
             if not valid_pnls:
                 avg_scores[params] = -float("inf")
             else:
                 avg_scores[params] = self.objective(valid_pnls)
 
-        best_params = max(avg_scores, key=avg_scores.get)
+        ranked = sorted(
+            avg_scores.items(),
+            key=lambda item: (-item[1], item[0].interval, item[0].ratio),
+        )
+        best_params = ranked[0][0]
         return GridSearchResult(
             best_params=best_params,
             best_score=avg_scores[best_params],
             scores=avg_scores,
             episodes_count=len(episodes),
+            valid_counts=valid_counts,
         )
 
     def top_k(
@@ -186,9 +213,4 @@ class GridSearch:
             [(ParameterSet, score), ...]
         """
         result = self.search(episodes)
-        sorted_items = sorted(
-            result.scores.items(),
-            key=lambda x: x[1],
-            reverse=True,
-        )
-        return sorted_items[:k]
+        return result.ranked_scores[:k]

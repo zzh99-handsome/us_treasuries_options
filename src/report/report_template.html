@@ -37,6 +37,58 @@
         .summary-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; font-size: 13px; }
         .summary-item { background: #F4F5F7; padding: 10px 12px; border-radius: 6px; }
         .summary-item span { color: #718096; }
+        .table-scroll {
+            width: 100%; max-width: 100%; max-height: 70vh; overflow: auto;
+            border: 1px solid #E2E8F0; border-radius: 6px; overscroll-behavior: contain;
+        }
+        .table-scroll table { width: max-content; min-width: 1500px; }
+        .table-scroll--trades table { min-width: 2100px; }
+        .table-scroll--diagnostics > table {
+            width: 100%; min-width: 900px; table-layout: fixed;
+        }
+        .table-scroll--diagnostics th,
+        .table-scroll--diagnostics td {
+            padding: 7px 8px; text-align: left; vertical-align: top;
+            white-space: normal; overflow-wrap: anywhere;
+        }
+        .table-scroll--diagnostics td small {
+            display: block; margin-top: 2px; color: #718096; font-size: 11px;
+        }
+        .diagnostic-detail-cell { position: relative; }
+        .diagnostic-detail-cell details[open] { position: relative; z-index: 5; }
+        .diagnostic-detail-cell summary {
+            color: #2B6CB0; cursor: pointer; font-weight: 600; white-space: nowrap;
+        }
+        .diagnostic-detail-panel {
+            position: absolute; z-index: 10; top: calc(100% + 4px); right: 0;
+            width: min(760px, 75vw); max-height: 55vh; overflow: auto;
+            padding: 12px; background: #fff; border: 1px solid #CBD5E0;
+            border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.16);
+        }
+        .diagnostic-meta {
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px;
+            text-align: left; font-size: 12px;
+        }
+        .diagnostic-meta > div { min-width: 0; }
+        .diagnostic-meta dt { color: #718096; font-size: 10px; text-transform: uppercase; }
+        .diagnostic-meta dd { overflow-wrap: anywhere; }
+        .diagnostic-reasons { margin: 10px 0; text-align: left; font-size: 12px; }
+        .diagnostic-reasons pre {
+            margin-top: 4px; max-height: 100px; overflow: auto; white-space: pre-wrap;
+            overflow-wrap: anywhere; background: #F7FAFC; padding: 6px;
+        }
+        .diagnostic-ranking-scroll { max-height: 220px; overflow: auto; }
+        .table-scroll--diagnostics .diagnostic-ranking {
+            width: 100%; min-width: 520px; table-layout: auto; font-size: 12px;
+        }
+        .table-scroll--diagnostics .diagnostic-ranking th,
+        .table-scroll--diagnostics .diagnostic-ranking td { padding: 5px 7px; }
+        @media (max-width: 700px) {
+            body { padding: 14px; }
+            .card { padding: 14px; }
+            .diagnostic-meta { grid-template-columns: 1fr; }
+            .diagnostic-detail-panel { width: min(620px, 82vw); }
+        }
     </style>
 </head>
 <body>
@@ -47,15 +99,21 @@
     <div class="card">
         <h2>Backtest Configuration</h2>
         <div class="summary-list">
-            <div class="summary-item"><span>Future Ticker:</span> {{ config.future_ticker }}</div>
+            <div class="summary-item"><span>Product:</span> {{ config.product_code }}</div>
             <div class="summary-item"><span>Product Prefix:</span> {{ config.product_prefix }}</div>
             <div class="summary-item"><span>Window Type:</span> {{ config.window_type }}</div>
             <div class="summary-item"><span>Train Months:</span> {{ config.train_months }}</div>
             <div class="summary-item"><span>Intervals:</span> {{ config.intervals | join(', ') }}</div>
-            <div class="summary-item"><span>Ratios:</span> {{ config.ratios | join(', ') }}</div>
+            <div class="summary-item"><span>Ratios (sell qty / buy qty):</span> {{ config.ratios | join(', ') }}</div>
             <div class="summary-item"><span>Initial Capital:</span> ${{ "{:,.0f}".format(config.initial_capital) }}</div>
-            <div class="summary-item"><span>Total Trades:</span> {{ trade_count }}</div>
+            <div class="summary-item"><span>Trades / Settled / Open / Skipped:</span> {{ trade_count }} / {{ settled_count }} / {{ open_count }} / {{ skipped_count }}</div>
         </div>
+    </div>
+
+    <div class="card">
+        <h2>Methodology, Data and Limitations</h2>
+        <ul>{% for note in methodology_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+        <details><summary>Effective configuration</summary><pre>{{ config_json }}</pre></details>
     </div>
 
     <div class="card">
@@ -69,13 +127,32 @@
     </div>
 
     <div class="card">
+        <h2>Walk-Forward Training Diagnostics</h2>
+        <div class="table-scroll table-scroll--diagnostics" tabindex="0" aria-label="Scrollable walk-forward training diagnostics">
+            {{ diagnostics_table | safe }}
+        </div>
+    </div>
+
+    <div class="card">
         <h2>Monthly Parameter Selection</h2>
         {{ params_table | safe }}
     </div>
 
     <div class="card">
         <h2>Trade Details</h2>
-        {{ trades_table | safe }}
+        <div class="table-scroll table-scroll--trades" tabindex="0" aria-label="Scrollable trade details">
+            {{ trades_table | safe }}
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Results by Month, Parameters and Regime</h2>
+        {{ breakdown_table | safe }}
+    </div>
+
+    <div class="card">
+        <h2>Skipped Entries</h2>
+        {{ skipped_table | safe }}
     </div>
 </div>
 </body>

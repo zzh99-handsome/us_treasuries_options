@@ -86,3 +86,15 @@ def test_grid_search_empty_episodes_raises() -> None:
     )
     with pytest.raises(ValueError):
         gs.search([])
+
+
+def test_grid_search_rejects_zero_ratio_candidate() -> None:
+    with pytest.raises(ValueError, match="range"):
+        GridSearch(
+            intervals=[0.5],
+            ratios=[0.0, 1.0],
+            strike_step=0.25,
+            strike_half_width=1.0,
+            contracts_k2=10,
+            product_prefix="TY",
+        )

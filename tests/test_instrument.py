@@ -68,6 +68,35 @@ def test_realized_pnl_dollar_conversion(sample_spread: PutRatioSpread) -> None:
     assert pnl == pytest.approx(-1000.0)
 
 
+def test_leg_cashflows_and_total_pnl_hand_calculation() -> None:
+    """腿级入场现金流加到期现金流应等于总组合盈亏。"""
+    chain = {
+        110.0: {"bid": 3.0, "ask": 4.0},
+        111.0: {"bid": 4.0, "ask": 5.0},
+    }
+    spread = PutRatioSpread.build(
+        future_price=111.0,
+        strike_step=1.0,
+        strike_half_width=1.0,
+        interval=1.0,
+        ratio=2.0,
+        option_chain=chain,
+        contracts_k2=1,
+        entry_date=dt.date(2020, 1, 2),
+        expiry_date=dt.date(2020, 2, 28),
+        product_prefix="TY",
+        point_value=1000.0,
+    )
+    assert spread is not None
+    assert spread.buy_qty == 1
+    assert spread.sell_qty == 2
+    assert spread.sell_premium_cashflow == pytest.approx(93.75)
+    assert spread.buy_premium_cashflow == pytest.approx(-78.125)
+    assert spread.premium_cashflow == pytest.approx(15.625)
+    assert spread.settlement_cashflow(108.0) == pytest.approx(-1000.0)
+    assert spread.realized_pnl(108.0) == pytest.approx(-984.375)
+
+
 def test_put_ratio_spread_build_success() -> None:
     """用有效参数成功构建 spread。"""
     chain = {
@@ -103,3 +132,51 @@ def test_put_ratio_spread_build_invalid_parameters() -> None:
         entry_date=dt.date(2026, 10, 15), expiry_date=dt.date(2026, 11, 27),
         product_prefix="TY",
     ) is None
+
+
+def test_put_ratio_spread_rejects_fractional_leg_quantities() -> None:
+    """候选数量必须可表示为整数张期权。"""
+    chain = {110.0: {"bid": 1.0, "ask": 2.0}, 110.5: {"bid": 2.0, "ask": 3.0}}
+    assert PutRatioSpread.build(
+        future_price=110.0, strike_step=0.5, strike_half_width=1.0,
+        interval=0.5, ratio=1.5, option_chain=chain, contracts_k2=1,
+        entry_date=dt.date(2026, 10, 15), expiry_date=dt.date(2026, 11, 27),
+        product_prefix="TY",
+    ) is None
+
+
+def test_decimal_ratio_maps_to_whole_contract_quantities() -> None:
+    """A 0.1 ratio works when the buy leg is scaled to ten contracts."""
+    chain = {110.0: {"bid": 3.0, "ask": 4.0}, 111.0: {"bid": 4.0, "ask": 5.0}}
+    spread = PutRatioSpread.build(
+        future_price=111.0, strike_step=1.0, strike_half_width=1.0,
+        interval=1.0, ratio=0.1, option_chain=chain, contracts_k2=10,
+        entry_date=dt.date(2020, 1, 2), expiry_date=dt.date(2020, 2, 28),
+        product_prefix="TY",
+    )
+    assert spread is not None
+    assert spread.buy_qty == 10
+    assert spread.sell_qty == 1
+
+
+def test_zero_ratio_is_rejected() -> None:
+    """ratio=0 is not a Put Ratio Spread candidate."""
+    chain = {111.0: {"bid": None, "ask": 5.0}}
+    spread = PutRatioSpread.build(
+        future_price=111.0, strike_step=1.0, strike_half_width=1.0,
+        interval=1.0, ratio=0.0, option_chain=chain, contracts_k2=1,
+        entry_date=dt.date(2020, 1, 2), expiry_date=dt.date(2020, 2, 28),
+        product_prefix="TY", max_bid_ask_spread_64=12.0,
+    )
+    assert spread is None
+
+
+def test_liquidity_filter_rejects_wide_market() -> None:
+    chain = {110.0: {"bid": 1.0, "ask": 20.0}, 111.0: {"bid": 2.0, "ask": 5.0}}
+    spread = PutRatioSpread.build(
+        future_price=111.0, strike_step=1.0, strike_half_width=1.0,
+        interval=1.0, ratio=1.0, option_chain=chain, contracts_k2=1,
+        entry_date=dt.date(2020, 1, 2), expiry_date=dt.date(2020, 2, 28),
+        product_prefix="TY", max_bid_ask_spread_64=12.0,
+    )
+    assert spread is None

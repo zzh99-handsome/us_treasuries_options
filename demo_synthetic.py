@@ -35,12 +35,13 @@ def make_synthetic_data() -> tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFra
         "TYM20 Comdty": pd.DataFrame({"PX_LAST": prices}, index=dates),
         "TYU20 Comdty": pd.DataFrame({"PX_LAST": prices}, index=dates),
         "TYZ20 Comdty": pd.DataFrame({"PX_LAST": prices}, index=dates),
+        "TYH21 Comdty": pd.DataFrame({"PX_LAST": prices}, index=dates),
     }
 
     series_list = list_option_series(
         dt.date(2020, 1, 1),
         dt.date(2020, 12, 31),
-        "TYZ20 Comdty",
+        "TYH21 Comdty",
     )
     center = 125.0
     strikes = [round(center + i * 0.25, 6) for i in range(-20, 21)]
@@ -75,15 +76,37 @@ def main() -> None:
         "strike_step": 0.25,
         "strike_half_width": 3.0,
         "intervals": [0.25, 0.5, 0.75, 1.0],
-        "ratios": [1.0, 1.25, 1.5, 1.75, 2.0],
+        "ratios": [round(i / 10, 1) for i in range(1, 21)],
+        "ratio_quantity_scale": 10,
         "window_type": "rolling",
         "train_months": 3,
         "risk_free_rate": 0.04,
         "initial_capital": 1_000_000.0,
         "point_value": 1000.0,
+        "settlement_field": "PX_LAST",
         "contracts_per_leg": 1,
         "enable_timing_factor": False,
         "expiry_overrides": {},
+        "data_source": "synthetic",
+        "data_start_date": "2020-01-01",
+        "data_fetched_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "optimization": {
+            "objective": "cumulative_pnl",
+            "minimum_samples": 2,
+            "regime_aware_ratio": False,
+            "near_tie_relative_gap": 0.02,
+        },
+        "execution": {
+            "buy_option_price": "ask",
+            "sell_option_price": "bid",
+            "invalid_quote_policy": "skip_trade",
+            "max_bid_ask_spread_64": 12,
+        },
+        "constraints": {"enabled": False},
+        "market_specifications": {
+            "verification_status": "synthetic_unverified",
+            "notes": "Synthetic prices validate code paths only; not market performance.",
+        },
     }
 
     futures_data, options_data = make_synthetic_data()
@@ -91,9 +114,10 @@ def main() -> None:
     strategy = MonthlyPutRatioSpreadStrategy(
         strike_step=config["strike_step"],
         strike_half_width=config["strike_half_width"],
-        contracts_k2=config["contracts_per_leg"],
+        contracts_k2=config["contracts_per_leg"] * config["ratio_quantity_scale"],
         product_prefix=config["product_prefix"],
         point_value=config["point_value"],
+        max_bid_ask_spread_64=config["execution"]["max_bid_ask_spread_64"],
     )
     window = RollingWindow(train_months=config["train_months"])
     grid_search = GridSearch(
@@ -101,9 +125,10 @@ def main() -> None:
         ratios=config["ratios"],
         strike_step=config["strike_step"],
         strike_half_width=config["strike_half_width"],
-        contracts_k2=config["contracts_per_leg"],
+        contracts_k2=config["contracts_per_leg"] * config["ratio_quantity_scale"],
         product_prefix=config["product_prefix"],
         point_value=config["point_value"],
+        max_bid_ask_spread_64=config["execution"]["max_bid_ask_spread_64"],
     )
 
     engine = BacktestEngine(
@@ -128,7 +153,12 @@ def main() -> None:
     print("\n========== Synthetic Backtest Result ==========")
     for k, v in metrics.to_dict().items():
         print(f"  {k}: {v}")
-    print(f"\n[OK] Report generated: {report_path.resolve()}")
+    print(
+        f"\n[INFO] Settled {len(result.trade_pnls)}, open "
+        f"{sum(trade.status == 'open' for trade in result.trades)}, "
+        f"skipped {len(result.skipped_trades)}"
+    )
+    print(f"[OK] Report generated: {report_path.resolve()}")
 
 
 if __name__ == "__main__":

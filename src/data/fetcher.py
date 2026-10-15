@@ -52,6 +52,20 @@ class BloombergDataFetcher:
             return df.to_pandas()
         return df.copy()
 
+    @staticmethod
+    def _normalize_daily_index(df: pd.DataFrame) -> pd.DataFrame:
+        """统一 Bloomberg 日频索引为无时区、日历日精度。"""
+        result = df.copy()
+        index = pd.DatetimeIndex(pd.to_datetime(result.index))
+        if index.tz is not None:
+            # 日频 BDH 的索引是交易日标签；时区和盘中可得时间不由该标签表达。
+            index = index.tz_localize(None)
+        index = index.normalize()
+        if index.has_duplicates:
+            raise RuntimeError("日频数据标准化后出现重复交易日，请检查 Bloomberg 返回索引。")
+        result.index = index
+        return result.sort_index()
+
     def _check_connection(self) -> None:
         """检查 Bloomberg 终端连接状态，未连接则抛出 RuntimeError。"""
         try:
@@ -93,7 +107,9 @@ class BloombergDataFetcher:
         if use_cache:
             cached = self.cache.get(ticker, fields, start, end)
             if cached is not None:
-                return cached
+                return self._normalize_daily_index(
+                    self._flatten_bdh(cached, ticker, fields)
+                )
 
         self._check_connection()
 
@@ -117,8 +133,7 @@ class BloombergDataFetcher:
 
         # xbbg bdh 返回的列可能是 MultiIndex；拍平并校验字段
         df = self._flatten_bdh(df, ticker, fields)
-        df.index = pd.to_datetime(df.index)
-        df = df.sort_index()
+        df = self._normalize_daily_index(df)
 
         if use_cache:
             self.cache.set(ticker, fields, start, end, df)
@@ -155,39 +170,83 @@ class BloombergDataFetcher:
             if use_cache and self.cache.exists(tk, fields, start, end):
                 df = self.cache.get(tk, fields, start, end)
                 if df is not None and not df.empty:
-                    result[tk] = df
+                    result[tk] = self._normalize_daily_index(
+                        self._flatten_bdh(df, tk, fields)
+                    )
             else:
                 need_fetch.append(tk)
 
         if need_fetch:
             self._check_connection()
-            for tk in need_fetch:
+            # 批量请求可明显减少历史期权的大量逐 ticker Bloomberg 往返。
+            # _flatten_bdh 会把每个 ticker 从 xbbg MultiIndex 或长表结果中独立拆出。
+            chunk_size = 80
+            for offset in range(0, len(need_fetch), chunk_size):
+                batch = need_fetch[offset : offset + chunk_size]
                 try:
                     df = blp.bdh(
-                        tickers=tk,
+                        tickers=batch,
                         flds=fields,
                         start_date=start,
                         end_date=end,
                     )
-                except Exception:
-                    # 单个 ticker 失败不影响其他
+                except Exception as batch_exc:
+                    # 批请求失败时逐 ticker 回退，避免单个坏 security 丢掉整批有效数据。
+                    print(f"[WARN] 期权批量请求失败，回退逐 ticker 拉取: {batch_exc}")
+                    result.update(
+                        self._fetch_option_batch_individually(
+                            batch, start, end, fields, use_cache
+                        )
+                    )
                     continue
                 if df is None:
                     continue
                 df = self._to_pandas(df)
                 if df.empty:
                     continue
-                try:
-                    df = self._flatten_bdh(df, tk, fields)
-                except RuntimeError as exc:
-                    print(f"[WARN] {exc}")
-                    continue
-                df.index = pd.to_datetime(df.index)
-                df = df.sort_index()
-                if use_cache:
-                    self.cache.set(tk, fields, start, end, df)
-                result[tk] = df
+                for tk in batch:
+                    try:
+                        ticker_df = self._flatten_bdh(df, tk, fields)
+                        ticker_df = self._normalize_daily_index(ticker_df)
+                    except RuntimeError as exc:
+                        print(f"[WARN] 跳过期权 {tk}: {exc}")
+                        continue
+                    if use_cache:
+                        self.cache.set(tk, fields, start, end, ticker_df)
+                    result[tk] = ticker_df
 
+        return result
+
+    def _fetch_option_batch_individually(
+        self,
+        tickers: List[str],
+        start: str,
+        end: str,
+        fields: List[str],
+        use_cache: bool,
+    ) -> Dict[str, pd.DataFrame]:
+        """批量 BDH 请求不可用时逐 ticker 回退，返回可标准化的有效数据。"""
+        result: Dict[str, pd.DataFrame] = {}
+        for ticker in tickers:
+            try:
+                raw = blp.bdh(
+                    tickers=ticker,
+                    flds=fields,
+                    start_date=start,
+                    end_date=end,
+                )
+                if raw is None:
+                    continue
+                raw = self._to_pandas(raw)
+                if raw.empty:
+                    continue
+                normalized = self._flatten_bdh(raw, ticker, fields)
+                normalized = self._normalize_daily_index(normalized)
+                if use_cache:
+                    self.cache.set(ticker, fields, start, end, normalized)
+                result[ticker] = normalized
+            except Exception as exc:
+                print(f"[WARN] 跳过期权 {ticker}: {exc}")
         return result
 
     def fetch_bulk(
@@ -246,6 +305,51 @@ class BloombergDataFetcher:
     @staticmethod
     def _flatten_bdh(df: pd.DataFrame, ticker: str, fields: List[str]) -> pd.DataFrame:
         """将 xbbg 返回的 bdh DataFrame 拍平为以字段为列的格式。"""
+        # 某些 xbbg/数据适配器版本返回长表：ticker、date、field、value。
+        # 先 pivot 成标准宽表，后续缓存和引擎只处理同一种 schema。
+        column_map = {str(column).strip().lower(): column for column in df.columns}
+        long_columns = {"ticker", "date", "field", "value"}
+        if long_columns.issubset(column_map):
+            ticker_col = column_map["ticker"]
+            date_col = column_map["date"]
+            field_col = column_map["field"]
+            value_col = column_map["value"]
+            rows = df[[ticker_col, date_col, field_col, value_col]].copy()
+            ticker_values = rows[ticker_col].astype(str).str.strip().str.casefold()
+            requested_ticker = ticker.strip().casefold()
+            rows = rows.loc[ticker_values == requested_ticker]
+            if rows.empty:
+                available_tickers = sorted(ticker_values.unique().tolist())
+                sample = available_tickers[:8]
+                raise RuntimeError(
+                    f"长表返回中找不到请求的 ticker {ticker}，"
+                    f"批次内共 {len(available_tickers)} 个 ticker，示例：{sample}"
+                )
+            rows[date_col] = pd.to_datetime(rows[date_col], errors="coerce")
+            rows[field_col] = rows[field_col].astype(str).str.strip().str.upper()
+            requested_fields = [field.upper() for field in fields]
+            rows = rows.loc[rows[field_col].isin(requested_fields)]
+            if rows.empty:
+                raise RuntimeError(
+                    f"长表返回中 {ticker} 不包含请求字段 {fields}。"
+                )
+            if rows.duplicated([date_col, field_col]).any():
+                raise RuntimeError(
+                    f"长表返回中 {ticker} 存在重复 date/field 行，无法无损标准化。"
+                )
+            try:
+                wide = rows.pivot(index=date_col, columns=field_col, values=value_col)
+            except ValueError as exc:
+                raise RuntimeError(f"无法将 {ticker} 长表行情转换为宽表。") from exc
+            wide.columns.name = None
+            wide = wide.rename(columns={field.upper(): field for field in fields})
+            missing = [field for field in fields if field not in wide.columns]
+            if missing:
+                raise RuntimeError(
+                    f"{ticker} 长表缺少字段 {missing}，可用列：{list(wide.columns)}"
+                )
+            return wide[fields]
+
         # xbbg bdh 可能返回列 MultiIndex，顺序可能是 (ticker, field) 或 (field, ticker)
         if isinstance(df.columns, pd.MultiIndex):
             # 尝试找到 ticker 所在的层级

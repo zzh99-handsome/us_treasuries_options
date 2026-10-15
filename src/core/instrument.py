@@ -10,6 +10,7 @@ Put Ratio Spread 结构：
 from __future__ import annotations
 
 import datetime as dt
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -56,6 +57,41 @@ class PutRatioSpread:
     bid_k1_64: float
     ask_k2_64: float
     point_value: float = 1000.0
+    bid_k1_timestamp: Optional[dt.datetime] = None
+    ask_k2_timestamp: Optional[dt.datetime] = None
+    bid_k1_quote_date: Optional[dt.date] = None
+    ask_k2_quote_date: Optional[dt.date] = None
+
+    @property
+    def buy_qty(self) -> int:
+        """买入高行权价 Put 的总张数。"""
+        return self.contracts_k2
+
+    @property
+    def sell_qty(self) -> int:
+        """卖出低行权价 Put 的总张数。"""
+        return int(round(self.ratio * self.contracts_k2))
+
+    @property
+    def premium_cashflow(self) -> float:
+        """入场净权利金现金流（美元；收取为正、支付为负）。"""
+        return self.sell_premium_cashflow + self.buy_premium_cashflow
+
+    @property
+    def sell_premium_cashflow(self) -> float:
+        """卖出腿 Bid 权利金现金流（美元，正值）。"""
+        return self.sell_qty * self.bid_k1_64 / 64.0 * self.point_value
+
+    @property
+    def buy_premium_cashflow(self) -> float:
+        """买入腿 Ask 权利金现金流（美元，负值）。"""
+        return -self.buy_qty * self.ask_k2_64 / 64.0 * self.point_value
+
+    def settlement_cashflow(self, future_price: float) -> float:
+        """到期各腿内在价值现金流（美元）。"""
+        bought = self.buy_qty * max(self.k2 - future_price, 0.0)
+        sold = self.sell_qty * max(self.k1 - future_price, 0.0)
+        return (bought - sold) * self.point_value
 
     @property
     def net_premium_points(self) -> float:
@@ -66,12 +102,14 @@ class PutRatioSpread:
         """
         # 卖出 ratio 张 K1 Put 收入 +ratio * bid_k1 / 64
         # 买入 1 张 K2 Put 支出 -ask_k2 / 64
-        return (self.ratio * self.bid_k1_64 - self.ask_k2_64) / 64.0
+        return (self.sell_qty * self.bid_k1_64 - self.buy_qty * self.ask_k2_64) / (
+            64.0 * self.buy_qty
+        )
 
     @property
     def net_premium_dollars(self) -> float:
         """建仓时的净权利金（美元）。"""
-        return self.net_premium_points * self.contracts_k2 * self.point_value
+        return self.premium_cashflow
 
     def payoff_at_expiration(self, future_price: float) -> float:
         """
@@ -83,11 +121,9 @@ class PutRatioSpread:
         Returns:
             期货点收益。
         """
-        return (
-            self.net_premium_points
-            + max(self.k2 - future_price, 0.0)
-            - self.ratio * max(self.k1 - future_price, 0.0)
-        )
+        return self.net_premium_points + max(self.k2 - future_price, 0.0) - (
+            self.sell_qty / self.buy_qty
+        ) * max(self.k1 - future_price, 0.0)
 
     def realized_pnl(self, future_price_at_expiry: float) -> float:
         """
@@ -99,7 +135,7 @@ class PutRatioSpread:
         Returns:
             美元盈亏。
         """
-        return self.payoff_at_expiration(future_price_at_expiry) * self.contracts_k2 * self.point_value
+        return self.premium_cashflow + self.settlement_cashflow(future_price_at_expiry)
 
     def theoretical_value(self, future_price: float) -> float:
         """
@@ -140,6 +176,7 @@ class PutRatioSpread:
         expiry_date: dt.date,
         product_prefix: str,
         point_value: float = 1000.0,
+        max_bid_ask_spread_64: Optional[float] = None,
     ) -> Optional["PutRatioSpread"]:
         """
         根据当前期货价与参数构建 Put Ratio Spread。
@@ -160,7 +197,18 @@ class PutRatioSpread:
         Returns:
             成功构建返回 PutRatioSpread，否则返回 None。
         """
-        if interval <= 0 or ratio <= 0:
+        if (
+            interval <= 0
+            or not math.isfinite(ratio)
+            or ratio <= 0
+            or ratio > 2
+            or contracts_k2 <= 0
+            or point_value <= 0
+            or (max_bid_ask_spread_64 is not None and max_bid_ask_spread_64 < 0)
+        ):
+            return None
+        sell_qty = ratio * contracts_k2
+        if not math.isclose(sell_qty, round(sell_qty), abs_tol=1e-9):
             return None
 
         # 以期货现价为中心构建行权价网格
@@ -170,43 +218,102 @@ class PutRatioSpread:
 
         # K2 = K1 + interval；我们遍历 K2，要求 K1 = K2 - interval 在网格中且有报价
         available = {round(s, 6): s for s in strikes if s in option_chain}
+        valid_pairs = []
         for k2 in sorted(available):
             k1 = round(k2 - interval, 6)
-            if k1 not in available:
+            if ratio > 0 and k1 not in available:
                 continue
-            q1 = option_chain[k1]
+            q1 = option_chain.get(k1, {})
             q2 = option_chain[k2]
-            bid_k1 = q1.get("bid")
             ask_k2 = q2.get("ask")
-            if bid_k1 is None or ask_k2 is None or bid_k1 <= 0 or ask_k2 <= 0:
+            try:
+                ask_k2 = float(ask_k2)
+            except (TypeError, ValueError):
                 continue
+            if not math.isfinite(ask_k2) or ask_k2 <= 0:
+                continue
+            ask_width = None
+            if ratio > 0:
+                try:
+                    bid_k1 = float(q1.get("bid"))
+                    ask_k1 = float(q1.get("ask"))
+                    bid_k2 = float(q2.get("bid"))
+                    if any(not math.isfinite(v) or v <= 0 for v in (bid_k1, ask_k1, bid_k2)):
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                if bid_k1 > ask_k1 or bid_k2 > ask_k2:
+                    continue
+                widths = (ask_k1 - bid_k1, ask_k2 - bid_k2)
+                if max_bid_ask_spread_64 is not None and any(
+                    width > max_bid_ask_spread_64 for width in widths
+                ):
+                    continue
+                ask_width = sum(widths)
+            elif max_bid_ask_spread_64 is not None:
+                # A pure long put needs an executable Ask; the unused short leg
+                # does not impose a bid/ask liquidity requirement.
+                try:
+                    bid_k2 = float(q2.get("bid"))
+                except (TypeError, ValueError):
+                    bid_k2 = None
+                if bid_k2 is not None and math.isfinite(bid_k2) and bid_k2 > 0:
+                    if bid_k2 > ask_k2 or ask_k2 - bid_k2 > max_bid_ask_spread_64:
+                        continue
+                elif q2.get("bid") not in (None, 0, 0.0):
+                    continue
+                ask_width = (
+                    ask_k2 - bid_k2
+                    if bid_k2 is not None and math.isfinite(bid_k2) and bid_k2 > 0
+                    else 0.0
+                )
 
             low_put = OptionContract(
-                ticker=f"{product_prefix} {k1}P",  # 简化 ticker，实际可调用 option_ticker
+                ticker=str(q1.get("ticker", f"{product_prefix} {k1}P")),
                 option_type="P",
                 strike=k1,
                 expiry_date=expiry_date,
             )
             high_put = OptionContract(
-                ticker=f"{product_prefix} {k2}P",
+                ticker=str(q2.get("ticker", f"{product_prefix} {k2}P")),
                 option_type="P",
                 strike=k2,
                 expiry_date=expiry_date,
             )
-            return cls(
-                k1=k1,
-                k2=k2,
-                ratio=ratio,
-                contracts_k2=contracts_k2,
-                entry_date=entry_date,
-                expiry_date=expiry_date,
-                low_put=low_put,
-                high_put=high_put,
-                bid_k1_64=bid_k1,
-                ask_k2_64=ask_k2,
-                point_value=point_value,
-            )
-        return None
+            # Prefer the pair with the tightest combined displayed market,
+            # then the strike closest to the futures price (stable tie-break).
+            valid_pairs.append((
+                ask_width if ask_width is not None else float("inf"),
+                abs(k2 - future_price),
+                k1,
+                k2,
+                low_put,
+                high_put,
+                float(q1.get("bid") or 0.0),
+                ask_k2,
+                q1,
+                q2,
+            ))
+        if not valid_pairs:
+            return None
+        _, _, k1, k2, low_put, high_put, bid_k1, ask_k2, q1, q2 = min(valid_pairs)
+        return cls(
+            k1=k1,
+            k2=k2,
+            ratio=ratio,
+            contracts_k2=contracts_k2,
+            entry_date=entry_date,
+            expiry_date=expiry_date,
+            low_put=low_put,
+            high_put=high_put,
+            bid_k1_64=bid_k1,
+            ask_k2_64=ask_k2,
+            point_value=point_value,
+            bid_k1_timestamp=q1.get("quote_timestamp"),
+            ask_k2_timestamp=q2.get("quote_timestamp"),
+            bid_k1_quote_date=q1.get("quote_date"),
+            ask_k2_quote_date=q2.get("quote_date"),
+        )
 
 
 def build_option_chain(

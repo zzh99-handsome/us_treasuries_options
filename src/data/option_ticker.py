@@ -1,10 +1,10 @@
 """
 期权 ticker 构造与到期日推导工具。
 
-遵循 Bloomberg 美债期货/期权命名规则：
-- 活跃合约年份代码为 1 位（如 Z6 = 2026 年 12 月）。
-- 已到期合约年份代码为 2 位（如 Z24 = 2024 年 12 月）。
-- 期权 ticker 格式：{prefix}{month_code}{year_code}{P/C} {strike} Comdty
+期货 ticker 的年份码与期权 ticker 的年份码分开处理：期货通常使用
+活跃合约 1 位、已到期合约 2 位；Bloomberg 终端样例显示历史期权 ticker
+仍使用 1 位年份码（例如 2017 年 12 月 Put 为 TYZ7P）。正式使用前仍应
+针对产品和合约系列核实 Bloomberg 与交易所资料。
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ class OptionSeries(NamedTuple):
 
     @property
     def key(self) -> str:
-        """例如 Z6 或 Z24。"""
+        """期权系列短码，例如 Z6 或 Z7。"""
         return f"{self.month_code}{self.year_code}"
 
 
@@ -64,6 +64,11 @@ def year_code(year: int, as_of: dt.date | None = None) -> str:
     if year >= as_of.year:
         return str(year % 10)
     return f"{year % 100:02d}"
+
+
+def option_year_code(year: int) -> str:
+    """返回 Bloomberg 期权系列使用的年份末位码。"""
+    return str(year % 10)
 
 
 def fourth_friday(year: int, month: int) -> dt.date:
@@ -178,7 +183,8 @@ def build_option_ticker(
         strike: 行权价。
 
     Returns:
-        例如 "TYZ6P 110 Comdty" 或 "TYZ24P 110 Comdty"。
+        例如 "TYZ6P 110 Comdty"；历史期权系列也按 Bloomberg 观察到的
+        单位数年份码构造，例如 "TYZ7P 125 Comdty"（2017 年 12 月）。
     """
     strike_str = str(int(strike)) if strike == int(strike) else f"{strike:g}"
     return f"{product_prefix}{series.key}{option_type} {strike_str} Comdty"
@@ -201,7 +207,7 @@ def list_option_series(
         start_date: 回测起始日期。
         end_date: 回测终止日期。
         future_ticker: 标的期货 ticker，用于推断交割月与年份。
-        expiry_overrides: 手动覆盖到期日，格式 {"Z6": "2026-11-27"} 或 {"Z24": "2024-11-22"}。
+        expiry_overrides: 手动覆盖到期日，格式 {"Z6": "2026-11-27"}。
         as_of: 参考日期，决定年份代码格式。
 
     Returns:
@@ -224,7 +230,7 @@ def list_option_series(
     series_list: List[OptionSeries] = []
     for y, m in month_iter(start_ym, end_ym):
         month_code = MONTH_CODES[m - 1]
-        yc = year_code(y, as_of)
+        yc = option_year_code(y)
         key = f"{month_code}{yc}"
         if key in overrides:
             expiry = dt.date.fromisoformat(str(overrides[key]))
