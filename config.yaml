@@ -1,0 +1,67 @@
+# ============================================================
+# Put Ratio Spread 回测配置
+# 路径均相对于 backtest/ 根目录
+# ============================================================
+
+# 标的期货产品代码（用于动态构造近月合约 ticker）。
+# 支持任意 CME 美债期货代码，例如：
+#   "TU" = 2Y, "FV" = 5Y, "TY" = 10Y, "US" = 30Y
+# 系统会在每个调仓日自动选择对应产品的近月合约。
+product_code: "TY"
+
+# 期权产品代码前缀（通常与 product_code 一致；用于拼期权 ticker）
+product_prefix: "TY"
+
+# 是否在进入交割月首日之后自动换月至下一季月合约
+roll_on_first_day_of_delivery_month: true
+
+# 回测数据起始/终止日期（YYYY-MM-DD）。
+# 可任意指定，系统会自动下载该区间所需的所有近月合约数据。
+start_date: "2019-01-01"
+end_date: "2024-01-01"
+
+# 期权类型：本策略固定为 Put
+option_type: "P"
+
+# 行权价网格参数
+strike_step: 0.25
+strike_half_width: 3.0
+
+# 网格搜索参数空间
+intervals: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+ratios: [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5]
+
+# 训练窗口设置
+window_type: "rolling"      # "rolling" 或 "expanding"
+train_months: 12            # rolling 窗口长度（月）；expanding 时作为最小训练长度
+
+# 无风险利率（年化，用于 Sharpe 计算）
+risk_free_rate: 0.04
+
+# 回测初始资金
+initial_capital: 1000000
+
+# 每腿合约乘数（每点对应的美元金额）。
+# 不同期限美债期货乘数不同，例如：TU/FV/TY = 1000，US = 1000。
+# 请根据所选 product_code 在 CME 官网确认。
+point_value: 1000
+
+# 每单买入腿合约数
+contracts_per_leg: 1
+
+# 缓存目录（相对 backtest/）
+cache_dir: "./cache"
+
+# 报告输出目录（相对 backtest/）
+report_dir: "./reports"
+
+# 是否启用择时因子框架（当前为占位实现）
+enable_timing_factor: false
+
+# 期权到期日 = 系列月份前一个月的第4个星期五（CME规则）。
+# 如遇节假日顺延等特殊情况，可在此手动覆盖，如: {"Z6": "2026-11-27"}
+expiry_overrides: {}
+
+# 数据字段
+futures_fields: ["PX_LAST"]
+option_fields: ["PX_BID", "PX_ASK", "PX_LAST"]

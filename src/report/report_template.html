@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #F8F9FC; color: #2D3748; line-height: 1.5; padding: 32px;
+        }
+        .wrap { max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 28px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }
+        h2 { font-size: 20px; font-weight: 700; color: #1a202c; margin: 32px 0 16px; }
+        .subtitle { color: #718096; font-size: 14px; margin-bottom: 24px; }
+        .card {
+            background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+            border: 1px solid #e8e8ec; margin-bottom: 24px; padding: 24px;
+        }
+        .metrics-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px;
+        }
+        .metric-card {
+            background: #F4F5F7; border-radius: 8px; padding: 16px;
+        }
+        .metric-label { font-size: 11px; font-weight: 600; color: #A0AEC0; text-transform: uppercase; letter-spacing: 0.05em; }
+        .metric-value { font-size: 18px; font-weight: 700; color: #1a202c; margin-top: 6px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        thead tr { border-bottom: 2px solid #E2E8F0; }
+        th { padding: 10px 12px; text-align: right; font-weight: 600; color: #718096; font-size: 11px; text-transform: uppercase; }
+        th.left, td.left { text-align: left; }
+        td { padding: 9px 12px; text-align: right; border-bottom: 1px solid #F4F5F7; }
+        tr:hover { background: #EDF2F7; }
+        .pos { color: #2F855A; font-weight: 600; }
+        .neg { color: #C53030; font-weight: 600; }
+        .summary-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; font-size: 13px; }
+        .summary-item { background: #F4F5F7; padding: 10px 12px; border-radius: 6px; }
+        .summary-item span { color: #718096; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>{{ title }}</h1>
+    <div class="subtitle">Generated at {{ generated_at }} | Backtest Period: {{ start_date }} ~ {{ end_date }}</div>
+
+    <div class="card">
+        <h2>Backtest Configuration</h2>
+        <div class="summary-list">
+            <div class="summary-item"><span>Future Ticker:</span> {{ config.future_ticker }}</div>
+            <div class="summary-item"><span>Product Prefix:</span> {{ config.product_prefix }}</div>
+            <div class="summary-item"><span>Window Type:</span> {{ config.window_type }}</div>
+            <div class="summary-item"><span>Train Months:</span> {{ config.train_months }}</div>
+            <div class="summary-item"><span>Intervals:</span> {{ config.intervals | join(', ') }}</div>
+            <div class="summary-item"><span>Ratios:</span> {{ config.ratios | join(', ') }}</div>
+            <div class="summary-item"><span>Initial Capital:</span> ${{ "{:,.0f}".format(config.initial_capital) }}</div>
+            <div class="summary-item"><span>Total Trades:</span> {{ trade_count }}</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Performance Metrics</h2>
+        {{ metrics_cards | safe }}
+    </div>
+
+    <div class="card">
+        <h2>Equity Curve</h2>
+        {{ equity_svg | safe }}
+    </div>
+
+    <div class="card">
+        <h2>Monthly Parameter Selection</h2>
+        {{ params_table | safe }}
+    </div>
+
+    <div class="card">
+        <h2>Trade Details</h2>
+        {{ trades_table | safe }}
+    </div>
+</div>
+</body>
+</html>

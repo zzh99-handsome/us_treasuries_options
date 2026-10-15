@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Put Ratio Spread Backtest Report</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #F8F9FC; color: #2D3748; line-height: 1.5; padding: 32px;
+        }
+        .wrap { max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 28px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }
+        h2 { font-size: 20px; font-weight: 700; color: #1a202c; margin: 32px 0 16px; }
+        .subtitle { color: #718096; font-size: 14px; margin-bottom: 24px; }
+        .card {
+            background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+            border: 1px solid #e8e8ec; margin-bottom: 24px; padding: 24px;
+        }
+        .metrics-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px;
+        }
+        .metric-card {
+            background: #F4F5F7; border-radius: 8px; padding: 16px;
+        }
+        .metric-label { font-size: 11px; font-weight: 600; color: #A0AEC0; text-transform: uppercase; letter-spacing: 0.05em; }
+        .metric-value { font-size: 18px; font-weight: 700; color: #1a202c; margin-top: 6px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        thead tr { border-bottom: 2px solid #E2E8F0; }
+        th { padding: 10px 12px; text-align: right; font-weight: 600; color: #718096; font-size: 11px; text-transform: uppercase; }
+        th.left, td.left { text-align: left; }
+        td { padding: 9px 12px; text-align: right; border-bottom: 1px solid #F4F5F7; }
+        tr:hover { background: #EDF2F7; }
+        .pos { color: #2F855A; font-weight: 600; }
+        .neg { color: #C53030; font-weight: 600; }
+        .summary-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; font-size: 13px; }
+        .summary-item { background: #F4F5F7; padding: 10px 12px; border-radius: 6px; }
+        .summary-item span { color: #718096; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Put Ratio Spread Backtest Report</h1>
+    <div class="subtitle">Generated at 2026-10-15T19:00:06 | Backtest Period: 2020-01-01 ~ 2020-12-31</div>
+
+    <div class="card">
+        <h2>Backtest Configuration</h2>
+        <div class="summary-list">
+            <div class="summary-item"><span>Future Ticker:</span> </div>
+            <div class="summary-item"><span>Product Prefix:</span> TY</div>
+            <div class="summary-item"><span>Window Type:</span> rolling</div>
+            <div class="summary-item"><span>Train Months:</span> 3</div>
+            <div class="summary-item"><span>Intervals:</span> 0.25, 0.5, 0.75, 1.0</div>
+            <div class="summary-item"><span>Ratios:</span> 1.0, 1.25, 1.5, 1.75, 2.0</div>
+            <div class="summary-item"><span>Initial Capital:</span> $1,000,000</div>
+            <div class="summary-item"><span>Total Trades:</span> 8</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Performance Metrics</h2>
+        <div class="metrics-grid"><div class="metric-card"><div class="metric-label">Total Return</div><div class="metric-value">0.01%</div></div><div class="metric-card"><div class="metric-label">Annual Return</div><div class="metric-value">0.01%</div></div><div class="metric-card"><div class="metric-label">Annual Volatility</div><div class="metric-value">0.00%</div></div><div class="metric-card"><div class="metric-label">Sharpe Ratio</div><div class="metric-value">-876.12</div></div><div class="metric-card"><div class="metric-label">Sortino Ratio</div><div class="metric-value">0.00</div></div><div class="metric-card"><div class="metric-label">Max Drawdown</div><div class="metric-value">0.00%</div></div><div class="metric-card"><div class="metric-label">Calmar Ratio</div><div class="metric-value">inf</div></div><div class="metric-card"><div class="metric-label">Win Rate</div><div class="metric-value">100.00%</div></div><div class="metric-card"><div class="metric-label">Avg Win</div><div class="metric-value">$3,941.27</div></div><div class="metric-card"><div class="metric-label">Avg Loss</div><div class="metric-value">$0.00</div></div><div class="metric-card"><div class="metric-label">Profit Factor</div><div class="metric-value">inf</div></div><div class="metric-card"><div class="metric-label">Skewness</div><div class="metric-value">15.57</div></div><div class="metric-card"><div class="metric-label">Kurtosis</div><div class="metric-value">247.08</div></div><div class="metric-card"><div class="metric-label">VaR 95%</div><div class="metric-value">0.00%</div></div><div class="metric-card"><div class="metric-label">CVaR 95%</div><div class="metric-value">0.00%</div></div><div class="metric-card"><div class="metric-label">Num Trades</div><div class="metric-value">8</div></div></div>
+    </div>
+
+    <div class="card">
+        <h2>Equity Curve</h2>
+        
+        <svg viewBox="0 0 800 300" style="width:100%;height:auto;background:#fff;border:1px solid #E2E8F0;border-radius:8px;">
+            <line x1="60" x2="780" y1="260.0" y2="260.0" stroke="#EDF2F7" stroke-width="1"/><text x="52" y="264.0" text-anchor="end" font-size="10" fill="#A0AEC0">1.00M</text><line x1="60" x2="780" y1="212.0" y2="212.0" stroke="#EDF2F7" stroke-width="1"/><text x="52" y="216.0" text-anchor="end" font-size="10" fill="#A0AEC0">1.00M</text><line x1="60" x2="780" y1="164.0" y2="164.0" stroke="#EDF2F7" stroke-width="1"/><text x="52" y="168.0" text-anchor="end" font-size="10" fill="#A0AEC0">1.00M</text><line x1="60" x2="780" y1="116.0" y2="116.0" stroke="#EDF2F7" stroke-width="1"/><text x="52" y="120.0" text-anchor="end" font-size="10" fill="#A0AEC0">1.00M</text><line x1="60" x2="780" y1="68.0" y2="68.0" stroke="#EDF2F7" stroke-width="1"/><text x="52" y="72.0" text-anchor="end" font-size="10" fill="#A0AEC0">1.00M</text><line x1="60" x2="780" y1="20.0" y2="20.0" stroke="#EDF2F7" stroke-width="1"/><text x="52" y="24.0" text-anchor="end" font-size="10" fill="#A0AEC0">1.00M</text>
+            <polyline points="60.0,240.0 62.8,240.0 65.5,240.0 68.3,240.0 71.0,240.0 73.8,240.0 76.6,240.0 79.3,240.0 82.1,240.0 84.8,240.0 87.6,240.0 90.3,240.0 93.1,240.0 95.9,240.0 98.6,240.0 101.4,240.0 104.1,240.0 106.9,240.0 109.7,240.0 112.4,240.0 115.2,240.0 117.9,240.0 120.7,240.0 123.4,240.0 126.2,240.0 129.0,240.0 131.7,240.0 134.5,240.0 137.2,240.0 140.0,240.0 142.8,240.0 145.5,240.0 148.3,240.0 151.0,240.0 153.8,240.0 156.6,240.0 159.3,240.0 162.1,240.0 164.8,240.0 167.6,240.0 170.3,240.0 173.1,240.0 175.9,240.0 178.6,240.0 181.4,240.0 184.1,240.0 186.9,240.0 189.7,240.0 192.4,240.0 195.2,240.0 197.9,240.0 200.7,240.0 203.4,240.0 206.2,240.0 209.0,240.0 211.7,240.0 214.5,240.0 217.2,240.0 220.0,240.0 222.8,240.0 225.5,240.0 228.3,240.0 231.0,240.0 233.8,240.0 236.6,240.0 239.3,240.0 242.1,240.0 244.8,240.0 247.6,240.0 250.3,240.0 253.1,240.0 255.9,240.0 258.6,240.0 261.4,240.0 264.1,240.0 266.9,240.0 269.7,240.0 272.4,240.0 275.2,240.0 277.9,240.0 280.7,240.0 283.4,240.0 286.2,240.0 289.0,240.0 291.7,240.0 294.5,240.0 297.2,240.0 300.0,240.0 302.8,240.0 305.5,240.0 308.3,240.0 311.0,240.0 313.8,240.0 316.6,240.0 319.3,240.0 322.1,240.0 324.8,240.0 327.6,240.0 330.3,240.0 333.1,240.0 335.9,240.0 338.6,240.0 341.4,240.0 344.1,240.0 346.9,240.0 349.7,240.0 352.4,240.0 355.2,240.0 357.9,240.0 360.7,240.0 363.4,240.0 366.2,240.0 369.0,240.0 371.7,240.0 374.5,240.0 377.2,240.0 380.0,240.0 382.8,240.0 385.5,240.0 388.3,240.0 391.0,240.0 393.8,240.0 396.6,240.0 399.3,240.0 402.1,240.0 404.8,240.0 407.6,240.0 410.3,240.0 413.1,240.0 415.9,240.0 418.6,240.0 421.4,240.0 424.1,240.0 426.9,240.0 429.7,240.0 432.4,240.0 435.2,240.0 437.9,240.0 440.7,240.0 443.4,240.0 446.2,240.0 449.0,240.0 451.7,240.0 454.5,240.0 457.2,240.0 460.0,240.0 462.8,240.0 465.5,240.0 468.3,240.0 471.0,240.0 473.8,240.0 476.6,240.0 479.3,240.0 482.1,240.0 484.8,240.0 487.6,240.0 490.3,240.0 493.1,240.0 495.9,240.0 498.6,240.0 501.4,240.0 504.1,240.0 506.9,240.0 509.7,240.0 512.4,240.0 515.2,240.0 517.9,240.0 520.7,240.0 523.4,240.0 526.2,240.0 529.0,240.0 531.7,240.0 534.5,240.0 537.2,240.0 540.0,240.0 542.8,240.0 545.5,240.0 548.3,240.0 551.0,240.0 553.8,240.0 556.6,240.0 559.3,240.0 562.1,240.0 564.8,240.0 567.6,240.0 570.3,240.0 573.1,240.0 575.9,240.0 578.6,240.0 581.4,240.0 584.1,240.0 586.9,240.0 589.7,240.0 592.4,240.0 595.2,240.0 597.9,240.0 600.7,240.0 603.4,240.0 606.2,240.0 609.0,240.0 611.7,240.0 614.5,240.0 617.2,240.0 620.0,240.0 622.8,240.0 625.5,240.0 628.3,240.0 631.0,240.0 633.8,240.0 636.6,240.0 639.3,240.0 642.1,240.0 644.8,240.0 647.6,240.0 650.3,240.0 653.1,240.0 655.9,240.0 658.6,240.0 661.4,240.0 664.1,240.0 666.9,240.0 669.7,240.0 672.4,240.0 675.2,240.0 677.9,240.0 680.7,240.0 683.4,240.0 686.2,240.0 689.0,240.0 691.7,240.0 694.5,240.0 697.2,240.0 700.0,240.0 702.8,240.0 705.5,240.0 708.3,240.0 711.0,211.4 713.8,40.0 716.6,40.0 719.3,40.0 722.1,40.0 724.8,40.0 727.6,40.0 730.3,40.0 733.1,40.0 735.9,40.0 738.6,40.0 741.4,40.0 744.1,40.0 746.9,40.0 749.7,40.0 752.4,40.0 755.2,40.0 757.9,40.0 760.7,40.0 763.4,40.0 766.2,40.0 769.0,40.0 771.7,40.0 774.5,40.0 777.2,40.0 780.0,40.0" fill="none" stroke="#2B6CB0" stroke-width="2"/>
+            <text x="60.0" y="276" text-anchor="middle" font-size="10" fill="#718096">2020-01</text><text x="239.3" y="276" text-anchor="middle" font-size="10" fill="#718096">2020-04</text><text x="421.4" y="276" text-anchor="middle" font-size="10" fill="#718096">2020-07</text><text x="600.7" y="276" text-anchor="middle" font-size="10" fill="#718096">2020-10</text><text x="780.0" y="276" text-anchor="middle" font-size="10" fill="#718096">2020-12</text>
+            <text x="780" y="292" text-anchor="end" font-size="10" fill="#A0AEC0">日期 →</text>
+        </svg>
+        
+    </div>
+
+    <div class="card">
+        <h2>Monthly Parameter Selection</h2>
+        
+        <table>
+            <thead><tr><th>Date</th><th>Interval</th><th>Ratio</th></tr></thead>
+            <tbody><tr><td>2020-04-01</td><td>0.25</td><td>1.0</td></tr><tr><td>2020-05-01</td><td>0.5</td><td>2.0</td></tr><tr><td>2020-06-01</td><td>1.0</td><td>2.0</td></tr><tr><td>2020-07-01</td><td>1.0</td><td>2.0</td></tr><tr><td>2020-08-03</td><td>1.0</td><td>2.0</td></tr><tr><td>2020-09-01</td><td>1.0</td><td>2.0</td></tr><tr><td>2020-10-01</td><td>1.0</td><td>2.0</td></tr><tr><td>2020-11-02</td><td>1.0</td><td>2.0</td></tr><tr><td>2020-12-01</td><td>1.0</td><td>2.0</td></tr></tbody>
+        </table>
+        
+    </div>
+
+    <div class="card">
+        <h2>Trade Details</h2>
+        
+        <table>
+            <thead>
+                <tr><th>Entry</th><th>Exit</th><th>K1</th><th>K2</th><th>Ratio</th><th>Realized PnL</th></tr>
+            </thead>
+            <tbody><tr><td>2020-04-01</td><td>2020-04-24</td><td>124.5</td><td>124.75</td><td>1.0</td><td class='pos'>234.38</td></tr><tr><td>2020-05-01</td><td>2020-05-22</td><td>123.75</td><td>124.25</td><td>2.0</td><td class='pos'>1,750.00</td></tr><tr><td>2020-06-01</td><td>2020-06-26</td><td>123.0</td><td>124.0</td><td>2.0</td><td class='pos'>3,000.00</td></tr><tr><td>2020-07-01</td><td>2020-07-24</td><td>122.0</td><td>123.0</td><td>2.0</td><td class='pos'>4,000.00</td></tr><tr><td>2020-08-03</td><td>2020-08-28</td><td>121.25</td><td>122.25</td><td>2.0</td><td class='pos'>4,750.00</td></tr><tr><td>2020-09-01</td><td>2020-09-25</td><td>120.25</td><td>121.25</td><td>2.0</td><td class='pos'>5,750.00</td></tr><tr><td>2020-10-01</td><td>2020-10-23</td><td>120.0</td><td>121.0</td><td>2.0</td><td class='pos'>6,000.00</td></tr><tr><td>2020-11-02</td><td>2020-11-27</td><td>120.0</td><td>121.0</td><td>2.0</td><td class='pos'>6,045.80</td></tr></tbody>
+        </table>
+        
+    </div>
+</div>
+</body>
+</html>
