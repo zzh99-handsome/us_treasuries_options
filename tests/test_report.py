@@ -29,7 +29,7 @@ def test_reporter_generates_html(tmp_path: Path, sample_config: dict) -> None:
         monthly_params=[(dt.date(2020, 4, 1), ParameterSet(interval=0.5, ratio=1.5))],
         grid_search_history=[],
     )
-    metrics = calculate_metrics(equity, risk_free_rate=0.04)
+    metrics = calculate_metrics(equity)
 
     reporter = HTMLReporter()
     out = tmp_path / "report.html"

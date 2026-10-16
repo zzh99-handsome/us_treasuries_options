@@ -65,7 +65,6 @@ def sample_config() -> dict:
         "ratios": [1.0, 1.5, 2.0],
         "window_type": "rolling",
         "train_months": 3,
-        "risk_free_rate": 0.04,
         "initial_capital": 1_000_000.0,
         "point_value": 1000.0,
         "contracts_per_leg": 1,

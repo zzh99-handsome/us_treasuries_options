@@ -363,8 +363,8 @@ class HTMLReporter:
             open_count=sum(trade.status == "open" for trade in result.trades),
             config_json=json.dumps(result.config, ensure_ascii=False, indent=2, default=str),
             methodology_notes=[
-                "Equity curve is initial capital plus cumulative realized P&L; open positions are not marked to market.",
-                "Return metrics use the configured initial capital as a nominal denominator; no margin, capital usage, or liquidity constraints are modeled.",
+                "Equity curve is initial capital plus cumulative daily mark-to-market P&L. Open positions are marked each trading day using an intrinsic-value approximation (no time value or volatility); expiry P&L is realized once using the settlement price.",
+                f"Return denominator: {result.config.get('performance', {}).get('denominator', 'initial_capital')}. Supported types: initial_capital (configured initial capital), notional (sum of buy-leg notional across trades), margin (notional * margin_ratio).",
                 "cumulative_pnl objective = sum of valid matured training-trade total P&L in USD; invalid candidates are excluded, higher scores are better, and ties use ascending interval then ratio.",
                 "Entry uses sell-leg Bid and buy-leg Ask. Required legs need positive, uncrossed two-sided quotes; no Mid or Last fallback is used.",
                 (
@@ -379,10 +379,12 @@ class HTMLReporter:
                     "and sell quantity is ratio times buy quantity. Ratio=0 is prohibited, so each strategy candidate "
                     "contains both bought and sold puts. Actual quantities are shown per trade in the ledger."
                 ),
+                f"Option chain source: {result.config.get('data', {}).get('option_chain_source', 'inferred')}; inferred builds strikes around the current futures price, while bloomberg_chain requests the exchange chain from Bloomberg when available.",
                 f"Quote source: {result.config.get('data_source', 'unspecified')}; observations use daily date indexes, so intraday availability and quote age are not verified.",
-                f"Expiry P&L uses configured field {result.config.get('settlement_field', 'PX_LAST')}; verify it is the exchange final settlement source before interpreting real results.",
+                f"Expiry P&L uses configured settlement field {result.config.get('settlement_field', 'PX_LAST')} with fallback to PX_LAST if the field is missing; verify it matches the exchange final settlement source before interpreting real results.",
+                f"Expiry dates follow the CME rule: the Friday before the last business day of the prior month, with U.S. federal holidays approximating CME closures. Manual overrides: {result.config.get('expiry_overrides')}.",
                 f"Market specification status: {result.config.get('market_specifications', {}).get('verification_status', 'unverified')}; record exchange sources before interpreting real-market performance.",
-                "Commissions, additional slippage, margin, and capital occupancy are not modeled. Synthetic results are for software behavior only.",
+                "Commissions, additional slippage, and bid/ask crossing slippage beyond the assumed entry prices are not modeled. Synthetic results are for software behavior only.",
             ],
         )
 

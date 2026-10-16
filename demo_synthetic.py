@@ -76,11 +76,10 @@ def main() -> None:
         "strike_step": 0.25,
         "strike_half_width": 3.0,
         "intervals": [0.25, 0.5, 0.75, 1.0],
-        "ratios": [round(i / 10, 1) for i in range(1, 21)],
+        "ratios": [round(i / 10, 1) for i in range(5, 26)],
         "ratio_quantity_scale": 10,
         "window_type": "rolling",
         "train_months": 3,
-        "risk_free_rate": 0.04,
         "initial_capital": 1_000_000.0,
         "point_value": 1000.0,
         "settlement_field": "PX_LAST",
@@ -144,7 +143,7 @@ def main() -> None:
     metrics = calculate_metrics(
         result.equity_curve,
         trade_pnls=result.trade_pnls,
-        risk_free_rate=config["risk_free_rate"],
+        denominator_info={"type": "initial_capital", "value": config["initial_capital"]},
     )
 
     report_path = Path("./reports/demo_synthetic.html")

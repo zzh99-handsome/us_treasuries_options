@@ -27,13 +27,20 @@ class DataCache:
         self.cache_dir = Path(cache_dir).resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _safe_ticker(ticker: str) -> str:
+        """将 ticker 中的空格与特殊字符替换为下划线，便于文件名可读。"""
+        return ticker.replace(" ", "_").replace("/", "_").replace("\\", "_")
+
+    @staticmethod
+    def _fields_hash(fields: List[str]) -> str:
+        """生成 fields 的短 hash，保证文件名长度可控。"""
+        content = json.dumps(sorted(fields), sort_keys=True)
+        return hashlib.md5(content.encode("utf-8")).hexdigest()[:8]
+
     def _key(self, ticker: str, fields: List[str], start: str, end: str) -> str:
-        """生成缓存 key（hash）。"""
-        content = json.dumps(
-            {"ticker": ticker, "fields": sorted(fields), "start": start, "end": end},
-            sort_keys=True,
-        )
-        return hashlib.md5(content.encode("utf-8")).hexdigest()
+        """生成可读缓存键名。"""
+        return f"{self._safe_ticker(ticker)}_{self._fields_hash(fields)}_{start}_{end}"
 
     def _path(self, key: str) -> Path:
         return self.cache_dir / f"{key}.pkl"
@@ -87,11 +94,12 @@ class DataCache:
             f.unlink()
 
     def summary(self) -> Dict[str, Any]:
-        """返回缓存摘要信息。"""
-        files = list(self.cache_dir.glob("*.pkl"))
+        """返回缓存摘要信息，包含可读文件名列表。"""
+        files = sorted(self.cache_dir.glob("*.pkl"))
         total_size = sum(f.stat().st_size for f in files)
         return {
             "cache_dir": str(self.cache_dir),
             "file_count": len(files),
             "total_size_bytes": total_size,
+            "files": [f.name for f in files],
         }

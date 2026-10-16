@@ -98,3 +98,29 @@ def test_grid_search_rejects_zero_ratio_candidate() -> None:
             contracts_k2=10,
             product_prefix="TY",
         )
+
+
+def test_grid_search_accepts_ratio_2_5() -> None:
+    """GridSearch 应接受 ratio=2.5。"""
+    gs = GridSearch(
+        intervals=[0.5],
+        ratios=[2.5],
+        strike_step=1.0,
+        strike_half_width=1.0,
+        contracts_k2=10,
+        product_prefix="TY",
+    )
+    assert 2.5 in gs.ratios
+
+
+def test_grid_search_rejects_ratio_above_2_5() -> None:
+    """GridSearch 应拒绝 ratio>2.5。"""
+    with pytest.raises(ValueError, match="range"):
+        GridSearch(
+            intervals=[0.5],
+            ratios=[2.6],
+            strike_step=1.0,
+            strike_half_width=1.0,
+            contracts_k2=10,
+            product_prefix="TY",
+        )

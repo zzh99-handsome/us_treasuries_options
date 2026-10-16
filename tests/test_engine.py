@@ -230,3 +230,15 @@ def test_engine_selects_front_month_contract(engine: BacktestEngine) -> None:
     # 2020-10-01 处于 Q4，近月合约应为 TYZ20（Dec 2020）
     ticker = engine._active_future_ticker(dt.date(2020, 10, 1))
     assert ticker == "TYZ20 Comdty"
+
+
+def test_engine_trade_records_notional_and_margin(engine: BacktestEngine) -> None:
+    """每笔成交交易应记录买入腿名义仓位与简化保证金占用。"""
+    result = engine.run(dt.date(2020, 4, 1), dt.date(2020, 12, 31))
+    assert result.trades
+    for trade in result.trades:
+        expected_notional = trade.spread.k2 * trade.spread.buy_qty * engine.point_value
+        assert trade.notional_value == pytest.approx(expected_notional)
+        assert trade.margin == pytest.approx(
+            expected_notional * engine.performance_config.get("margin_ratio", 0.1)
+        )

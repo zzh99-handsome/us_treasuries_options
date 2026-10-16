@@ -15,6 +15,7 @@ import pandas as pd
 from xbbg import blp
 
 from src.data.cache import DataCache
+from src.data.option_ticker import build_option_ticker, list_option_series, parse_future_ticker
 
 
 class BloombergDataFetcher:
@@ -248,6 +249,163 @@ class BloombergDataFetcher:
             except Exception as exc:
                 print(f"[WARN] 跳过期权 {ticker}: {exc}")
         return result
+
+    def fetch_option_chain_tickers(
+        self,
+        future_ticker: str,
+        ref_date: dt.date,
+        future_price: Optional[float] = None,
+        option_type: str = "P",
+        strike_step: float = 0.25,
+        strike_half_width: float = 3.0,
+        option_chain_source: str = "bloomberg_chain",
+    ) -> List[str]:
+        """
+        获取某期货合约在参考日期附近的可交易期权 ticker 列表。
+
+        优先尝试 Bloomberg CHAIN_TICKERS 接口；失败或不可用时，
+        fallback 到按 future_price 为中心构造 strike 网格。
+
+        Args:
+            future_ticker: 期货合约 ticker。
+            ref_date: 参考日期。
+            future_price: 当前期货价格，用于 inferred fallback；若为 None 则不使用 fallback。
+            option_type: 期权类型，默认 Put。
+            strike_step: fallback 时 strike 网格步长。
+            strike_half_width: fallback 时 strike 网格半宽。
+            option_chain_source: "bloomberg_chain" 或 "inferred"。
+
+        Returns:
+            期权 ticker 列表。
+        """
+        if option_chain_source == "bloomberg_chain":
+            try:
+                self._check_connection()
+                chain_df = blp.bdp(future_ticker, "CHAIN_TICKERS")
+                if chain_df is not None:
+                    chain_pd = self._to_pandas(chain_df)
+                    if not chain_pd.empty:
+                        # CHAIN_TICKERS 返回的 ticker 可能包含 call/put 混合，
+                        # 按 option_type 过滤。
+                        tickers = self._extract_option_tickers(chain_pd, option_type)
+                        if tickers:
+                            return tickers
+            except Exception as exc:
+                print(f"[WARN] Bloomberg CHAIN_TICKERS 获取失败，回退到 inferred: {exc}")
+
+        if future_price is None:
+            return []
+
+        return self._infer_option_tickers(
+            future_ticker,
+            ref_date,
+            future_price,
+            option_type,
+            strike_step,
+            strike_half_width,
+        )
+
+    @staticmethod
+    def _extract_option_tickers(chain_df: pd.DataFrame, option_type: str) -> List[str]:
+        """从 Bloomberg CHAIN_TICKERS 返回中提取指定类型期权 ticker。"""
+        # CHAIN_TICKERS 通常返回一列或多列包含期权 ticker。
+        # 这里尝试找到包含 ticker 的列并过滤。
+        tickers: set[str] = set()
+        for col in chain_df.columns:
+            for val in chain_df[col].dropna().astype(str).values:
+                val = val.strip()
+                if not val:
+                    continue
+                # 简单过滤：期权 ticker 中间字符为 P 或 C，如 TYZ6P 130 Comdty
+                if option_type == "P" and "P " in val.replace("Comdty", "").strip():
+                    tickers.add(val)
+                elif option_type == "C" and "C " in val.replace("Comdty", "").strip():
+                    tickers.add(val)
+        return sorted(tickers)
+
+    def _infer_option_tickers(
+        self,
+        future_ticker: str,
+        ref_date: dt.date,
+        future_price: float,
+        option_type: str,
+        strike_step: float,
+        strike_half_width: float,
+    ) -> List[str]:
+        """按 strike 网格构造候选期权 ticker。"""
+        series_list = list_option_series(
+            start_date=ref_date,
+            end_date=ref_date,
+            future_ticker=future_ticker,
+        )
+        # 只取参考日期之后仍有效的最近 series
+        series_list = [
+            s for s in series_list
+            if (s.expiry_date - ref_date).days >= 2
+        ]
+        if not series_list:
+            return []
+
+        center = round(future_price / strike_step) * strike_step
+        n = int(round(strike_half_width / strike_step))
+        strikes = [round(center + i * strike_step, 6) for i in range(-n, n + 1)]
+
+        prefix = parse_future_ticker(future_ticker).prefix
+        tickers: List[str] = []
+        for series in series_list:
+            for strike in strikes:
+                tickers.append(
+                    build_option_ticker(
+                        product_prefix=prefix,
+                        series=series,
+                        option_type=option_type,
+                        strike=strike,
+                    )
+                )
+        return tickers
+
+    def fetch_option_history_for_chain(
+        self,
+        future_ticker: str,
+        ref_date: dt.date,
+        start_date: dt.date | str,
+        end_date: dt.date | str,
+        fields: Optional[List[str]] = None,
+        future_price: Optional[float] = None,
+        option_chain_source: str = "bloomberg_chain",
+        use_cache: bool = True,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        为指定期货合约在参考日期构造/拉取期权链，并下载历史数据。
+
+        Args:
+            future_ticker: 期货合约 ticker。
+            ref_date: 构造期权链的参考日期。
+            start_date: 历史数据起始日期。
+            end_date: 历史数据结束日期。
+            fields: 期权字段列表。
+            future_price: fallback 构造网格时用的期货价格。
+            option_chain_source: 期权链来源。
+            use_cache: 是否使用本地缓存。
+
+        Returns:
+            {ticker: DataFrame} 字典。
+        """
+        option_tickers = self.fetch_option_chain_tickers(
+            future_ticker=future_ticker,
+            ref_date=ref_date,
+            future_price=future_price,
+            option_chain_source=option_chain_source,
+        )
+        if not option_tickers:
+            return {}
+        return self.fetch_option_history(
+            tickers=option_tickers,
+            start_date=start_date,
+            end_date=end_date,
+            fields=fields,
+            use_cache=use_cache,
+        )
 
     def fetch_bulk(
         self,

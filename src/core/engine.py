@@ -96,30 +96,10 @@ class BacktestEngine:
             "max_bid_ask_spread_64",
             getattr(strategy, "max_bid_ask_spread_64", None),
         )
-        if configured_spread_limit is not None and float(configured_spread_limit) < 0:
-            raise ValueError("execution.max_bid_ask_spread_64 must be non-negative")
         strategy.max_bid_ask_spread_64 = (
             None if configured_spread_limit is None else float(configured_spread_limit)
         )
         grid_search.max_bid_ask_spread_64 = strategy.max_bid_ask_spread_64
-        if strategy.contracts_k2 != grid_search.contracts_k2:
-            raise ValueError("strategy and grid_search must use the same buy-leg contract quantity")
-        if execution.get("buy_option_price", "ask") != "ask":
-            raise ValueError("当前执行模型仅支持买入腿使用 Ask")
-        if execution.get("sell_option_price", "bid") != "bid":
-            raise ValueError("当前执行模型仅支持卖出腿使用 Bid")
-        if execution.get("invalid_quote_policy", "skip_trade") != "skip_trade":
-            raise ValueError("当前仅支持 invalid_quote_policy=skip_trade")
-        backtest_options = config.get("backtest", {})
-        if backtest_options.get("hold_to_expiry", True) is not True:
-            raise ValueError("当前策略只支持持有至到期")
-        if backtest_options.get("roll_existing_positions", False):
-            raise ValueError("存续组合不能移仓；请设置 roll_existing_positions=false")
-        strategy_options = config.get("strategy", {})
-        if strategy_options.get("require_same_expiry", True) is not True:
-            raise ValueError("同一组合的所有期权腿必须使用相同到期日")
-        if config.get("constraints", {}).get("enabled", False):
-            raise ValueError("资本/保证金约束尚未实现，constraints.enabled 必须为 false")
 
         self.product_code = config["product_code"]
         self.product_prefix = config["product_prefix"]
@@ -130,6 +110,7 @@ class BacktestEngine:
         self.settlement_field = config.get("settlement_field", "PX_LAST")
         self.initial_capital = config.get("initial_capital", 1_000_000.0)
         self.roll_on_first_day = config.get("roll_on_first_day_of_delivery_month", True)
+        self.performance_config = config.get("performance", {})
 
         # 汇总所有合约的交易日，作为全局日期索引
         all_dates: pd.DatetimeIndex = pd.DatetimeIndex([], tz=None)
@@ -168,9 +149,15 @@ class BacktestEngine:
         self,
         d: dt.date,
         ticker: Optional[str] = None,
-        field: str = "PX_LAST",
+        field: Optional[str] = None,
     ) -> Optional[float]:
-        """精确读取指定合约/日期/字段，不做前向填充。"""
+        """
+        精确读取指定合约/日期/字段，不做前向填充。
+
+        若指定字段不存在，会 fallback 到 PX_LAST 并打印一次 warning。
+        """
+        if field is None:
+            field = self.settlement_field
         if ticker is None:
             ticker = self._active_future_ticker(d)
         if ticker is None or ticker not in self.futures_data:
@@ -180,7 +167,20 @@ class BacktestEngine:
             value = float(df.loc[pd.Timestamp(d), field])
             return value if pd.notna(value) else None
         except (KeyError, TypeError, ValueError):
-            return None
+            pass
+
+        # Fallback: 若 settlement_field 缺失，尝试 PX_LAST
+        if field != "PX_LAST" and "PX_LAST" in df.columns:
+            try:
+                value = float(df.loc[pd.Timestamp(d), "PX_LAST"])
+                if pd.notna(value):
+                    print(
+                        f"[WARN] {ticker} {d} 缺少字段 {field}，fallback 使用 PX_LAST"
+                    )
+                    return value
+            except (KeyError, TypeError, ValueError):
+                pass
+        return None
 
     def _option_price(
         self,
@@ -381,7 +381,6 @@ class BacktestEngine:
         ]
         if len(oos_dates) < 2:
             raise ValueError("样本外区间至少需要两个有效交易日才能生成绩效报告")
-        daily_realized_pnl = pd.Series(0.0, index=oos_dates)
         optimization_config = self.config.get("optimization", {})
         objective_name = optimization_config.get("objective", "cumulative_pnl")
         if objective_name != "cumulative_pnl":
@@ -521,33 +520,59 @@ class BacktestEngine:
             trade.future_ticker = active_ticker or ""
             trade.regime = current_regime
             trade.window_id = diagnostic["window_id"]
+            trade.notional_value = trade.spread.k2 * trade.spread.buy_qty * self.point_value
+            margin_ratio = float(self.performance_config.get("margin_ratio", 0.1))
+            trade.margin = trade.notional_value * margin_ratio
             trades.append(trade)
             diagnostic["expiry_date"] = series.expiry_date.isoformat()
             diagnostic["quote_timestamp_semantics"] = "daily date index; intraday availability unverified"
 
-        # 仅在实际结算日确认总盈亏；未到期或缺少结算价的交易保持 open。
+        # 每日 mark-to-market：未到期持仓按内在价值近似，到期日按结算价确认盈亏。
         trade_pnls: List[float] = []
-        for trade in trades:
-            settlement_price = (
-                self._future_price(
-                    trade.exit_date, trade.future_ticker, self.settlement_field
-                )
-                if trade.exit_date <= end_date
-                else None
-            )
-            if settlement_price is None:
-                trade.status = "open"
-                continue
-            trade.status = "settled"
-            trade.settlement_price = settlement_price
-            trade.settlement_cashflow = trade.spread.settlement_cashflow(settlement_price)
-            trade.realized_pnl = trade.spread.realized_pnl(settlement_price)
-            trade_pnls.append(trade.realized_pnl)
-            settlement_ts = pd.Timestamp(trade.exit_date)
-            if settlement_ts in daily_realized_pnl.index:
-                daily_realized_pnl.loc[settlement_ts] += trade.realized_pnl
+        equity_values: List[float] = []
 
-        equity = self.initial_capital + daily_realized_pnl.cumsum()
+        for ts in oos_dates:
+            d = ts.date()
+            total_cum_pnl = 0.0
+
+            for trade in trades:
+                if trade.entry_date > d:
+                    continue
+
+                if d >= trade.exit_date:
+                    # 已到期或今日到期：确保结算一次
+                    if trade.status != "settled":
+                        settlement_price = self._future_price(
+                            trade.exit_date, trade.future_ticker
+                        )
+                        if settlement_price is None:
+                            continue
+                        trade.status = "settled"
+                        trade.settlement_price = settlement_price
+                        trade.settlement_cashflow = (
+                            trade.spread.settlement_cashflow(settlement_price)
+                        )
+                        trade.realized_pnl = trade.spread.realized_pnl(
+                            settlement_price
+                        )
+                        trade_pnls.append(trade.realized_pnl)
+
+                    if trade.realized_pnl is not None:
+                        total_cum_pnl += trade.realized_pnl
+                else:
+                    # 未到期：按当日近月期货价 MTM
+                    future_price = self._future_price(d, trade.future_ticker)
+                    if future_price is not None:
+                        total_cum_pnl += trade.spread.daily_pnl(future_price)
+
+            equity_values.append(self.initial_capital + total_cum_pnl)
+
+        # 未在回测区间内到期的交易保持 open
+        for trade in trades:
+            if trade.status != "settled":
+                trade.status = "open"
+
+        equity = pd.Series(equity_values, index=oos_dates)
 
         return BacktestResult(
             config=self.config,

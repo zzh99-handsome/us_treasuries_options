@@ -30,6 +30,8 @@ class Trade:
     settlement_cashflow: Optional[float] = None
     regime: str = "neutral"
     window_id: str = ""
+    notional_value: float = 0.0
+    margin: float = 0.0
 
 
 class MonthlyPutRatioSpreadStrategy:

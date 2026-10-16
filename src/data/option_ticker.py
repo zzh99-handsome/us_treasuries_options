@@ -5,6 +5,11 @@
 活跃合约 1 位、已到期合约 2 位；Bloomberg 终端样例显示历史期权 ticker
 仍使用 1 位年份码（例如 2017 年 12 月 Put 为 TYZ7P）。正式使用前仍应
 针对产品和合约系列核实 Bloomberg 与交易所资料。
+
+期权到期日规则：
+- 默认采用 CME 美债期货期权规则：标的期货合约月份前一个月的最后一个
+  交易日之前的周五，遇节假日顺延至下一个交易日。
+- 可通过 expiry_overrides 手动覆盖。
 """
 
 from __future__ import annotations
@@ -12,6 +17,12 @@ from __future__ import annotations
 import datetime as dt
 import re
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
+
+import pandas as pd
+from pandas.tseries.holiday import USFederalHolidayCalendar
+
+
+_CME_HOLIDAY_CALENDAR = USFederalHolidayCalendar()
 
 MONTH_CODES = "FGHJKMNQUVXZ"  # 1..12 月
 MONTH_ABBR = [
@@ -77,6 +88,63 @@ def fourth_friday(year: int, month: int) -> dt.date:
     # 周一=0 ... 周五=4；偏移量到第一个周五
     offset = (4 - first.weekday()) % 7
     return first + dt.timedelta(days=offset + 21)
+
+
+def is_cme_holiday(d: dt.date) -> bool:
+    """判断日期是否为 CME 节假日（使用美国联邦假日日历近似）。"""
+    # 周末也算非交易日，但此处只判断假日日历。
+    return d in _CME_HOLIDAY_CALENDAR.holidays(
+        start=pd.Timestamp(d.year - 1, 1, 1),
+        end=pd.Timestamp(d.year + 1, 12, 31),
+    )
+
+
+def next_business_day(d: dt.date) -> dt.date:
+    """返回 d 之后的下一个交易日（跳过周末与节假日）。"""
+    one_day = dt.timedelta(days=1)
+    while True:
+        d += one_day
+        if d.weekday() >= 5 or is_cme_holiday(d):
+            continue
+        return d
+
+
+def cme_option_expiry(option_year: int, option_month: int) -> dt.date:
+    """
+    计算 CME 美债期货期权到期日。
+
+    规则：标的期货合约月份前一个月的最后一个交易日之前的周五，
+    若该周五为节假日，则顺延至下一个交易日。
+
+    Args:
+        option_year: 期权系列年份。
+        option_month: 期权系列月份。
+
+    Returns:
+        期权到期日。
+    """
+    # 前一个月
+    if option_month == 1:
+        prev_y, prev_m = option_year - 1, 12
+    else:
+        prev_y, prev_m = option_year, option_month - 1
+
+    # 前一个月最后一天的日期
+    if prev_m == 12:
+        last_day = dt.date(prev_y + 1, 1, 1) - dt.timedelta(days=1)
+    else:
+        last_day = dt.date(prev_y, prev_m + 1, 1) - dt.timedelta(days=1)
+
+    # 最后一个交易日之前的周五
+    # last_day.weekday(): 周一=0, ..., 周五=4
+    days_back = (last_day.weekday() - 4) % 7
+    expiry = last_day - dt.timedelta(days=days_back)
+
+    # 若周五为节假日，顺延至下一个交易日
+    if expiry.weekday() >= 5 or is_cme_holiday(expiry):
+        expiry = next_business_day(expiry)
+
+    return expiry
 
 
 def prev_month(year: int, month: int) -> Tuple[int, int]:
@@ -235,8 +303,7 @@ def list_option_series(
         if key in overrides:
             expiry = dt.date.fromisoformat(str(overrides[key]))
         else:
-            py, pm = prev_month(y, m)
-            expiry = fourth_friday(py, pm)
+            expiry = cme_option_expiry(y, m)
         series_list.append(
             OptionSeries(
                 year=y,

@@ -65,7 +65,7 @@ class PerformanceMetrics:
 def calculate_metrics(
     equity_curve: pd.Series,
     trade_pnls: Optional[list] = None,
-    risk_free_rate: float = 0.04,
+    denominator_info: Optional[Dict] = None,
 ) -> PerformanceMetrics:
     """
     根据净值曲线计算绩效指标。
@@ -73,7 +73,9 @@ def calculate_metrics(
     Args:
         equity_curve: 以日期为索引的权益序列。
         trade_pnls: 每笔交易的实现盈亏列表（美元），用于统计胜率等。
-        risk_free_rate: 年化无风险利率。
+        denominator_info: 收益分母信息，例如 {"type": "notional", "value": 1_000_000}。
+            type 可选 "initial_capital" | "notional" | "margin"。
+            为 None 时默认使用 equity 起点作为分母。
 
     Returns:
         PerformanceMetrics。
@@ -82,20 +84,30 @@ def calculate_metrics(
     if len(equity) < 2:
         raise ValueError("净值曲线长度不足，无法计算指标")
 
-    returns = equity.pct_change().dropna()
-    if returns.empty:
-        raise ValueError("收益率序列为空")
-
     # 按交易日年化（252 天）
     periods_per_year = 252
-    total_return = equity.iloc[-1] / equity.iloc[0] - 1.0
-    n_periods = len(returns)
+
+    denominator = equity.iloc[0]
+    denominator_label = "initial_capital"
+    if denominator_info is not None:
+        denominator_label = denominator_info.get("type", "initial_capital")
+        denominator = float(denominator_info.get("value", equity.iloc[0]))
+    if denominator <= 0:
+        raise ValueError("收益分母必须为正数")
+
+    total_pnl = equity.iloc[-1] - equity.iloc[0]
+    total_return = total_pnl / denominator
+    n_periods = len(equity) - 1
     annual_return = (1.0 + total_return) ** (periods_per_year / n_periods) - 1.0
+
+    # 日收益率以指定分母为基准
+    returns = equity.diff().dropna() / denominator
+    if returns.empty:
+        raise ValueError("收益率序列为空")
     annual_volatility = returns.std() * np.sqrt(periods_per_year)
 
-    excess_returns = returns - risk_free_rate / periods_per_year
     sharpe_ratio = (
-        excess_returns.mean() / returns.std() * np.sqrt(periods_per_year)
+        returns.mean() / returns.std() * np.sqrt(periods_per_year)
         if returns.std() > 0
         else 0.0
     )
@@ -103,7 +115,7 @@ def calculate_metrics(
     downside_returns = returns[returns < 0]
     downside_std = downside_returns.std() * np.sqrt(periods_per_year)
     sortino_ratio = (
-        (returns.mean() * periods_per_year - risk_free_rate) / downside_std
+        (returns.mean() * periods_per_year) / downside_std
         if downside_std > 0
         else 0.0
     )

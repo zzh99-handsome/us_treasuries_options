@@ -180,3 +180,28 @@ def test_liquidity_filter_rejects_wide_market() -> None:
         product_prefix="TY", max_bid_ask_spread_64=12.0,
     )
     assert spread is None
+
+
+def test_ratio_upper_bound_allows_2_5() -> None:
+    """参数空间上限应允许 ratio=2.5。"""
+    chain = {110.0: {"bid": 3.0, "ask": 4.0}, 111.0: {"bid": 4.0, "ask": 5.0}}
+    spread = PutRatioSpread.build(
+        future_price=111.0, strike_step=1.0, strike_half_width=1.0,
+        interval=1.0, ratio=2.5, option_chain=chain, contracts_k2=10,
+        entry_date=dt.date(2020, 1, 2), expiry_date=dt.date(2020, 2, 28),
+        product_prefix="TY",
+    )
+    assert spread is not None
+    assert spread.ratio == pytest.approx(2.5)
+    assert spread.sell_qty == 25
+
+
+def test_ratio_above_2_5_is_rejected() -> None:
+    """ratio 超过 2.5 应被拒绝。"""
+    chain = {110.0: {"bid": 3.0, "ask": 4.0}, 111.0: {"bid": 4.0, "ask": 5.0}}
+    assert PutRatioSpread.build(
+        future_price=111.0, strike_step=1.0, strike_half_width=1.0,
+        interval=1.0, ratio=2.6, option_chain=chain, contracts_k2=10,
+        entry_date=dt.date(2020, 1, 2), expiry_date=dt.date(2020, 2, 28),
+        product_prefix="TY",
+    ) is None

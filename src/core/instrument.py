@@ -145,6 +145,20 @@ class PutRatioSpread:
         """
         return self.payoff_at_expiration(future_price)
 
+    def daily_pnl(self, future_price: float) -> float:
+        """
+        按单日期货价格计算 mark-to-market 未实现盈亏（美元）。
+
+        Args:
+            future_price: 当前期货价格。
+
+        Returns:
+            未实现盈亏。
+        """
+        return (
+            self.theoretical_value(future_price) - self.net_premium_points
+        ) * self.contracts_k2 * self.point_value
+
     def daily_pnl_series(
         self,
         future_prices: pd.Series,
@@ -201,7 +215,7 @@ class PutRatioSpread:
             interval <= 0
             or not math.isfinite(ratio)
             or ratio <= 0
-            or ratio > 2
+            or ratio > 2.5
             or contracts_k2 <= 0
             or point_value <= 0
             or (max_bid_ask_spread_64 is not None and max_bid_ask_spread_64 < 0)

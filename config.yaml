@@ -28,11 +28,11 @@ strike_step: 0.25
 strike_half_width: 3.0
 
 # 网格搜索参数空间
-intervals: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+intervals: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 # ratio = sell_qty / buy_qty；每腿数量必须为整数。
 ratio_range:
-  min: 0.1
-  max: 2.0
+  min: 0.5
+  max: 2.5
   step: 0.1
 # A 10-contract buy leg makes every 0.1 sell/buy ratio an integer lot count.
 ratio_quantity_scale: 10
@@ -41,9 +41,6 @@ ratio_quantity_scale: 10
 window_type: "rolling"      # "rolling" 或 "expanding"
 train_months: 12            # rolling 窗口长度（月）；expanding 时作为最小训练长度
 
-# 无风险利率（年化，用于 Sharpe 计算）
-risk_free_rate: 0.04
-
 # 回测初始资金
 initial_capital: 1000000
 
@@ -51,8 +48,9 @@ initial_capital: 1000000
 # 不同期限美债期货乘数不同，例如：TU/FV/TY = 1000，US = 1000。
 # 请根据所选 product_code 在 CME 官网确认。
 point_value: 1000
-# 临时使用 PX_LAST 作为到期价格代理；真实回测前核实并改为权威最终结算字段。
-settlement_field: "PX_LAST"
+# 到期结算字段：优先使用交易所官方最终结算价。
+# 若 Bloomberg 中该字段缺失，引擎会 fallback 到 PX_LAST 并打印 warning。
+settlement_field: "SETTLE_PRICE"
 
 # 每单买入腿合约数
 contracts_per_leg: 1
@@ -71,6 +69,9 @@ backtest:
 data:
   # 回测首月之前额外下载的历史月份，用于形成首个训练窗口。
   warmup_months: 12
+  # 期权链来源：bloomberg_chain 优先使用 Bloomberg CHAIN_TICKERS；
+  # 不可用时 fallback 到 inferred（按 strike 网格构造）。
+  option_chain_source: "bloomberg_chain"
 
 execution:
   buy_option_price: "ask"
@@ -95,6 +96,14 @@ optimization:
 
 constraints:
   enabled: false
+
+performance:
+  # 收益分母：initial_capital | notional | margin
+  # - initial_capital: 使用配置初始资金作为名义分母
+  # - notional: 使用每笔交易买入腿名义仓位之和作为分母
+  # - margin: 使用简化保证金模型（notional * margin_ratio）作为分母
+  denominator: "initial_capital"
+  margin_ratio: 0.1
 
 report:
   include_training_diagnostics: true

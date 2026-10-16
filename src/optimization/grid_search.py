@@ -111,10 +111,10 @@ class GridSearch:
         self.intervals = list(intervals)
         self.ratios = [float(ratio) for ratio in ratios]
         if not self.ratios or any(
-            not math.isfinite(ratio) or ratio <= 0 or ratio > 2
+            not math.isfinite(ratio) or ratio <= 0 or ratio > 2.5
             for ratio in self.ratios
         ):
-            raise ValueError("ratios must contain finite values in the range (0, 2]")
+            raise ValueError("ratios must contain finite values in the range (0, 2.5]")
         self.strike_step = strike_step
         self.strike_half_width = strike_half_width
         self.contracts_k2 = contracts_k2
